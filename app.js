@@ -1,9 +1,9 @@
 /* ==========================================================
-   Cup Mapper — app.js (single-thread, no external libs)
-   - Fast preview mapping with selectable preview scale
-   - Full-width hero preview for the original image (mobile-friendly)
-   - Manual mix with patterns + logical pixel (cell) size
-   - Kits, projects, PNG/SVG export
+   Cup Mapper — app.js (no external libs)
+   - Preview mapping (scalable) + export remap (full-res)
+   - Hero preview, kits, projects
+   - Manual mix (4a) + Pattern replace (4b)
+   - iOS color picker stability (no re-render on input)
    ========================================================== */
 
 /* -------------------- DOM -------------------- */
@@ -48,7 +48,7 @@ const els = {
   btnLoadKit: $('btnLoadKit'),
   btnDeleteKit: $('btnDeleteKit'),
 
-  // Stage 4
+  // Stage 4a (manual mix)
   replaceSrc: $('replaceSrc'),
   blockSize: $('blockSize'),
   mixCellSize: $('mixCellSize'),
@@ -60,6 +60,18 @@ const els = {
   btnPreviewMix: $('btnPreviewMix'),
   mixPreview: $('mixPreview'),
   tplMixRow: $('tplMixRow'),
+
+  // Stage 4b (pattern replace)
+  prEnable: $('prEnable'),
+  prSrc: $('prSrc'),
+  prBg: $('prBg'),
+  prShape: $('prShape'),
+  prShapeColor: $('prShapeColor'),
+  prCell: $('prCell'),
+  prShapeSize: $('prShapeSize'),
+  prStagger: $('prStagger'),
+  btnPreviewPattern: $('btnPreviewPattern'),
+  prPreview: $('prPreview'),
 
   // Stage 5
   wL: $('wL'),
@@ -108,13 +120,25 @@ let state = {
   restricted: [],  // [{hex, enabled}]
   allowWhite: false,
 
-  // manual mix rule
+  // manual mix rule (4a)
   mixRule: {
     srcHex: null,     // original color to replace
     inks: [],         // [{hex, density}], 2..3, total 100
     block: 6,         // logical grid size
     pattern: 'blue',  // blue|checker|stripes-h|stripes-v|bayer
-    cellSize: 1,      // logical pixel multiplier (bigger shapes for AI)
+    cellSize: 1,      // logical pixel multiplier
+  },
+
+  // pattern replace (4b)
+  patternRule: {
+    enabled: false,
+    srcHex: null,         // original color to replace
+    bg: '#FFFFFF',
+    shape: 'dots',        // dots|squares|stripes-h|stripes-v|checker|cross
+    shapeColor: '#FF0000',
+    cell: 12,             // cell size (px)
+    shapeSize: 70,        // percent of cell (10..100)
+    stagger: false,       // stagger rows for dots/squares
   },
 
   // mapping cache
@@ -144,13 +168,14 @@ function hexToRgb(hex){const m=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(
 // sRGB -> XYZ -> Lab (D65)
 function rgb2lab(r,g,b){r/=255;g/=255;b/=255;const inv=u=>u<=0.04045?u/12.92:Math.pow((u+0.055)/1.055,2.4);r=inv(r);g=inv(g);b=inv(b);let x=r*0.4124+g*0.3576+b*0.1805;let y=r*0.2126+g*0.7152+b*0.0722;let z=r*0.0193+g*0.1192+b*0.9505;const xr=x/0.95047,yr=y/1.0,zr=z/1.08883;const f=t=>t>0.008856?Math.cbrt(t):7.787*t+16/116;const fx=f(xr),fy=f(yr),fz=f(zr);return{L:116*fy-16,a:500*(fx-fy),b:200*(fy-fz)};}
 function deltaE2(l1,l2,wL=1,wC=1){const dL=(l1.L-l2.L)*wL, da=(l1.a-l2.a)*wC, db=(l1.b-l2.b)*wC;return dL*dL+da*da+db*db;}
+function sameHex(a,b){return (a||'').toUpperCase() === (b||'').toUpperCase();}
 
 /* -------------------- Hero Preview (original image) -------------------- */
 function renderHero() {
   if (!state.srcW || !state.srcH) { els.heroCanvas.width = 0; els.heroCanvas.height = 0; return; }
   const wrap = els.heroCanvas.parentElement.getBoundingClientRect();
   const targetW = Math.max(320, Math.floor(wrap.width));
-  const cap = 2400; // pixel cap for iPhone memory
+  const cap = 2400; // keep memory safe on phones
   const scale = Math.min(1, targetW / state.srcW, cap / state.srcW);
   const w = Math.max(1, Math.round(state.srcW * scale));
   const h = Math.max(1, Math.round(state.srcH * scale));
@@ -210,8 +235,9 @@ function clearAll() {
   state.restricted = [];
   state.allowWhite = false;
   state.mixRule = { srcHex:null, inks:[], block:6, pattern:'blue', cellSize:1 };
+  state.patternRule = { enabled:false, srcHex:null, bg:'#FFFFFF', shape:'dots', shapeColor:'#FF0000', cell:12, shapeSize:70, stagger:false };
   els.allowWhite.checked = false;
-  renderOrigPalette(); renderRestricted(); renderReplaceSrc();
+  renderOrigPalette(true); renderRestricted(true); renderReplaceSrc(); renderPatternSrc();
   els.mixInks.innerHTML = ''; updateMixTotal();
   els.downloadLink.style.display = 'none';
   state.mappedImageData = null;
@@ -246,7 +272,12 @@ els.srcCanvas.addEventListener('click', (e) => {
   const y=Math.floor((e.clientY-rect.top)*(els.srcCanvas.height/rect.height));
   const d=srcCtx.getImageData(x,y,1,1).data;
   const hex=rgbToHex(d[0],d[1],d[2]);
-  if(!state.origPalette.includes(hex)){ state.origPalette.push(hex); renderOrigPalette(); renderReplaceSrc(); toast(`Added ${hex} to original palette`); }
+  if(!state.origPalette.includes(hex)){
+    state.origPalette.push(hex);
+    appendOrigSwatch(hex, state.origPalette.length - 1); // inline add (no full re-render)
+    renderReplaceSrc(); renderPatternSrc();
+    toast(`Added ${hex} to original palette`);
+  }
 });
 
 function samplePixels(ctx, max = 120000) {
@@ -290,56 +321,80 @@ function autoExtract(){
   const K=Math.max(2,Math.min(16,+els.clusters.value||8));
   const samples=samplePixels(srcCtx); if(!samples.length) return toast('No pixels to sample','danger');
   state.origPalette=kmeans(samples,K,8);
-  renderOrigPalette(); renderReplaceSrc();
-  if(state.restricted.length===0){ state.restricted=state.origPalette.slice(0,10).map(hex=>({hex,enabled:true})); renderRestricted(); }
+  renderOrigPalette(true); renderReplaceSrc(); renderPatternSrc();
+  if(state.restricted.length===0){ state.restricted=state.origPalette.slice(0,10).map(hex=>({hex,enabled:true})); renderRestricted(true); }
   status(`Extracted ${state.origPalette.length} colors`);
 }
 
 /* -------------------- Stage 3: Restricted palette -------------------- */
-function renderOrigPalette(){
+// iOS-friendly: render once; color inputs use 'change' to avoid picker closing.
+function renderOrigPalette(full = false){
   els.origPalette.innerHTML='';
-  state.origPalette.forEach((hex, idx)=>{
-    const sw=document.createElement('div'); sw.className='swatch';
-    const dot=document.createElement('div'); dot.className='dot'; dot.style.background=hex;
-    const col=document.createElement('input'); col.type='color'; col.value=hex;
-    col.addEventListener('input',()=>{ state.origPalette[idx]=col.value.toUpperCase(); renderOrigPalette(); renderReplaceSrc(); });
-    const label=document.createElement('span'); label.textContent=hex;
-    sw.append(dot,col,label); els.origPalette.appendChild(sw);
-  });
+  state.origPalette.forEach((hex, idx)=>appendOrigSwatch(hex, idx));
 }
-function renderRestricted(){
+function appendOrigSwatch(hex, idx){
+  const sw=document.createElement('div'); sw.className='swatch';
+  const dot=document.createElement('div'); dot.className='dot'; dot.style.background=hex;
+  const col=document.createElement('input'); col.type='color'; col.value=hex;
+  const label=document.createElement('span'); label.textContent=hex;
+
+  col.addEventListener('change',()=>{ // use change, not input (iOS-friendly)
+    const newHex = col.value.toUpperCase();
+    state.origPalette[idx]=newHex;
+    dot.style.background = newHex;
+    label.textContent = newHex;
+    // update selects without re-rendering lists
+    refreshSelectOptions(els.replaceSrc, state.origPalette);
+    refreshSelectOptions(els.prSrc, state.origPalette);
+  });
+
+  sw.append(dot,col,label); els.origPalette.appendChild(sw);
+}
+function renderRestricted(full = false){
   els.restrictedPalette.innerHTML='';
   state.restricted.slice(0,10).forEach((item,idx)=>{
     const sw=document.createElement('div'); sw.className='swatch';
     const dot=document.createElement('div'); dot.className='dot'; dot.style.background=item.hex;
     const col=document.createElement('input'); col.type='color'; col.value=item.hex;
-    col.addEventListener('input',()=>{ state.restricted[idx].hex=col.value.toUpperCase(); renderRestricted(); });
     const label=document.createElement('span'); label.textContent=item.hex;
     const chk=document.createElement('input'); chk.type='checkbox'; chk.checked=item.enabled;
-    chk.addEventListener('change',()=>{ state.restricted[idx].enabled=chk.checked; });
     const del=document.createElement('button'); del.className='btn btn-danger'; del.textContent='Remove';
-    del.addEventListener('click',()=>{ state.restricted.splice(idx,1); renderRestricted(); });
+
+    col.addEventListener('change',()=>{ // 'change' to avoid picker close
+      const newHex = col.value.toUpperCase();
+      state.restricted[idx].hex=newHex;
+      dot.style.background=newHex;
+      label.textContent=newHex;
+    });
+    chk.addEventListener('change',()=>{ state.restricted[idx].enabled=chk.checked; });
+    del.addEventListener('click',()=>{ state.restricted.splice(idx,1); renderRestricted(true); });
+
     sw.append(dot,col,label,chk,del); els.restrictedPalette.appendChild(sw);
   });
 }
-els.btnRefreshRestricted.addEventListener('click',()=>{ state.restricted=state.origPalette.slice(0,10).map(hex=>({hex,enabled:true})); renderRestricted(); });
+els.btnRefreshRestricted.addEventListener('click',()=>{ state.restricted=state.origPalette.slice(0,10).map(hex=>({hex,enabled:true})); renderRestricted(true); });
 els.allowWhite.addEventListener('change',()=>{ state.allowWhite=!!els.allowWhite.checked; });
-els.btnAddRestricted.addEventListener('click',()=>{ if(state.restricted.length>=10) return toast('Max 10 inks','danger'); state.restricted.push({hex:'#FFFFFF',enabled:true}); renderRestricted(); });
+els.btnAddRestricted.addEventListener('click',()=>{ if(state.restricted.length>=10) return toast('Max 10 inks','danger'); state.restricted.push({hex:'#FFFFFF',enabled:true}); renderRestricted(true); });
 
 /* -------------------- Kits (save / load / delete) -------------------- */
 function loadKits(){ const obj=JSON.parse(localStorage.getItem(KITS_KEY)||'{}'); els.kitSelect.innerHTML=''; Object.keys(obj).forEach(name=>{ const o=document.createElement('option'); o.value=name; o.textContent=name; els.kitSelect.appendChild(o); }); return obj; }
 function saveKits(obj){ localStorage.setItem(KITS_KEY, JSON.stringify(obj)); }
 els.btnSaveKit.addEventListener('click',()=>{ const name=prompt('Kit name?'); if(!name) return; const kits=loadKits(); kits[name]=state.restricted; saveKits(kits); loadKits(); toast('Kit saved'); });
-els.btnLoadKit.addEventListener('click',()=>{ const kits=loadKits(); const name=els.kitSelect.value; if(!name) return; state.restricted=kits[name]||[]; renderRestricted(); toast('Kit loaded'); });
+els.btnLoadKit.addEventListener('click',()=>{ const kits=loadKits(); const name=els.kitSelect.value; if(!name) return; state.restricted=kits[name]||[]; renderRestricted(true); toast('Kit loaded'); });
 els.btnDeleteKit.addEventListener('click',()=>{ const kits=loadKits(); const name=els.kitSelect.value; if(!name) return; delete kits[name]; saveKits(kits); loadKits(); toast('Kit deleted'); });
 loadKits();
 
-/* -------------------- Stage 4: Manual Mix -------------------- */
+/* -------------------- Stage 4a: Manual Mix -------------------- */
 function renderReplaceSrc(){
-  els.replaceSrc.innerHTML='';
-  state.origPalette.forEach(hex=>{ const o=document.createElement('option'); o.value=hex; o.textContent=hex; els.replaceSrc.appendChild(o); });
+  refreshSelectOptions(els.replaceSrc, state.origPalette);
   if(state.origPalette.length && !state.mixRule.srcHex) state.mixRule.srcHex=state.origPalette[0];
   if(state.mixRule.srcHex) els.replaceSrc.value=state.mixRule.srcHex;
+}
+function refreshSelectOptions(sel, arr){
+  const old = sel.value;
+  sel.innerHTML = '';
+  arr.forEach(hex=>{ const o=document.createElement('option'); o.value=hex; o.textContent=hex; sel.appendChild(o); });
+  if (arr.includes(old)) sel.value = old;
 }
 els.replaceSrc.addEventListener('change',()=>{ state.mixRule.srcHex=els.replaceSrc.value; });
 els.blockSize.addEventListener('change',()=>{ state.mixRule.block=Math.max(2,Math.min(64,+els.blockSize.value||6)); });
@@ -380,29 +435,26 @@ els.btnPreviewMix.addEventListener('click',()=>{
 
   const ctx=els.mixPreview.getContext('2d');
   ctx.clearRect(0,0,els.mixPreview.width,els.mixPreview.height);
-  const tile=buildDotTile(state.mixRule.block, inks, state.mixRule.pattern, state.mixRule.cellSize);
+  const tile=buildMixTile(state.mixRule.block, inks, state.mixRule.pattern, state.mixRule.cellSize);
   for(let y=0;y<els.mixPreview.height;y+=tile.height){ for(let x=0;x<els.mixPreview.width;x+=tile.width){ ctx.putImageData(tile,x,y); } }
   toast('Mix preview updated');
 });
 
-// Build a tile with patterns + logical pixel (cell) size
-function buildDotTile(b, inks, pattern = 'blue', cellSize = 1) {
+// Build tile for Manual Mix (4a)
+function buildMixTile(b, inks, pattern = 'blue', cellSize = 1) {
   b = Math.max(1, b|0);
   cellSize = Math.max(1, cellSize|0);
-
-  const tileW = b * cellSize;
-  const tileH = b * cellSize;
+  const tileW = b * cellSize, tileH = b * cellSize;
   const tile = new ImageData(tileW, tileH);
 
   const cells = b * b;
   const quotas = inks.map(i => Math.round(cells * (i.density / 100)));
   let remaining = quotas.reduce((s, v) => s + v, 0);
 
-  // Logical positions
   const positions = [];
   for (let gy = 0; gy < b; gy++) for (let gx = 0; gx < b; gx++) positions.push({ gx, gy });
 
-  // Pattern ordering
+  // pattern order
   if (pattern === 'checker') {
     positions.sort((p, q) => ((p.gx + p.gy) & 1) - ((q.gx + q.gy) & 1));
   } else if (pattern === 'stripes-h') {
@@ -416,7 +468,6 @@ function buildDotTile(b, inks, pattern = 'blue', cellSize = 1) {
     positions.sort((p, q) => ((p.gx * 73856093) ^ (p.gy * 19349663)) - ((q.gx * 73856093) ^ (q.gy * 19349663)));
   }
 
-  // Round-robin assignment respecting quotas
   let i = 0;
   for (const pos of positions) {
     let guard = 0;
@@ -428,7 +479,6 @@ function buildDotTile(b, inks, pattern = 'blue', cellSize = 1) {
     const x0 = pos.gx * cellSize;
     const y0 = pos.gy * cellSize;
 
-    // Paint NxN block
     for (let dy = 0; dy < cellSize; dy++) {
       const y = y0 + dy, row = y * tileW;
       for (let dx = 0; dx < cellSize; dx++) {
@@ -443,6 +493,125 @@ function buildDotTile(b, inks, pattern = 'blue', cellSize = 1) {
     quotas[i]--; remaining--;
     i = (i + 1) % inks.length;
   }
+  return tile;
+}
+
+/* -------------------- Stage 4b: Pattern Replace -------------------- */
+function renderPatternSrc(){
+  refreshSelectOptions(els.prSrc, state.origPalette);
+  if(state.origPalette.length && !state.patternRule.srcHex) state.patternRule.srcHex=state.origPalette[0];
+  if(state.patternRule.srcHex) els.prSrc.value=state.patternRule.srcHex;
+}
+els.prEnable.addEventListener('change',()=>{ state.patternRule.enabled = !!els.prEnable.checked; });
+els.prSrc.addEventListener('change',()=>{ state.patternRule.srcHex = els.prSrc.value; });
+els.prBg.addEventListener('change',()=>{ state.patternRule.bg = els.prBg.value.toUpperCase(); });
+els.prShape.addEventListener('change',()=>{ state.patternRule.shape = els.prShape.value; });
+els.prShapeColor.addEventListener('change',()=>{ state.patternRule.shapeColor = els.prShapeColor.value.toUpperCase(); });
+els.prCell.addEventListener('change',()=>{ state.patternRule.cell = Math.max(2, Math.min(128, +els.prCell.value||12)); });
+els.prShapeSize.addEventListener('input',()=>{ state.patternRule.shapeSize = Math.max(10, Math.min(100, +els.prShapeSize.value||70)); });
+els.prStagger.addEventListener('change',()=>{ state.patternRule.stagger = !!els.prStagger.checked; });
+
+els.btnPreviewPattern.addEventListener('click',()=>{
+  const tile = buildPatternTile(state.patternRule);
+  const ctx = els.prPreview.getContext('2d');
+  ctx.clearRect(0,0,els.prPreview.width,els.prPreview.height);
+  for(let y=0;y<els.prPreview.height;y+=tile.height){
+    for(let x=0;x<els.prPreview.width;x+=tile.width){
+      ctx.putImageData(tile,x,y);
+    }
+  }
+  toast('Pattern preview updated');
+});
+
+// Build tile for Pattern Replace (4b)
+function buildPatternTile(rule){
+  const cell = Math.max(2, rule.cell|0);
+  const tile = new ImageData(cell, cell);
+  const bg = hexToRgb(rule.bg);
+  const fg = hexToRgb(rule.shapeColor);
+  const pct = Math.max(10, Math.min(100, rule.shapeSize|0)) / 100;
+  const half = cell / 2;
+  const radius = Math.max(1, Math.round((cell * pct) / 2));
+  const stripeW = Math.max(1, Math.round(cell * pct));
+
+  // paint background
+  for (let i=0; i<tile.data.length; i+=4) {
+    tile.data[i+0]=bg.r; tile.data[i+1]=bg.g; tile.data[i+2]=bg.b; tile.data[i+3]=255;
+  }
+
+  // helper draw pixel
+  const pix = (x,y,c) => {
+    if (x<0||y<0||x>=cell||y>=cell) return;
+    const i=(y*cell + x)*4;
+    tile.data[i+0]=c.r; tile.data[i+1]=c.g; tile.data[i+2]=c.b; tile.data[i+3]=255;
+  };
+
+  // stagger offset for row 0 only; in the mapper we offset by row parity
+  const oddOffset = rule.stagger ? Math.floor(cell/2) : 0;
+
+  switch (rule.shape) {
+    case 'dots': {
+      // center dot (no per-row stagger inside single tile; real stagger happens via mapper parity)
+      for (let y=0; y<cell; y++){
+        for (let x=0; x<cell; x++){
+          const dx = x - Math.floor(half);
+          const dy = y - Math.floor(half);
+          if (dx*dx + dy*dy <= radius*radius) pix(x,y,fg);
+        }
+      }
+      break;
+    }
+    case 'squares': {
+      const size = Math.max(1, Math.round(cell * pct));
+      const x0 = Math.floor((cell - size)/2);
+      const y0 = Math.floor((cell - size)/2);
+      for (let y=0; y<size; y++){
+        for (let x=0; x<size; x++){
+          pix(x0+x, y0+y, fg);
+        }
+      }
+      break;
+    }
+    case 'stripes-h': {
+      const y0 = Math.floor((cell - stripeW)/2);
+      for (let y=0; y<stripeW; y++){
+        for (let x=0; x<cell; x++) pix(x, y0+y, fg);
+      }
+      break;
+    }
+    case 'stripes-v': {
+      const x0 = Math.floor((cell - stripeW)/2);
+      for (let x=0; x<stripeW; x++){
+        for (let y=0; y<cell; y++) pix(x0+x, y, fg);
+      }
+      break;
+    }
+    case 'checker': {
+      const s = Math.max(1, Math.round(cell * pct / 2));
+      for (let y=0; y<cell; y++){
+        for (let x=0; x<cell; x++){
+          const cx = Math.floor(x / s);
+          const cy = Math.floor(y / s);
+          if (((cx + cy) & 1) === 0) pix(x,y,fg);
+        }
+      }
+      break;
+    }
+    case 'cross': {
+      const thick = Math.max(1, Math.round(cell * pct / 5));
+      const mid = Math.floor(half);
+      for (let y=0; y<cell; y++){
+        for (let x=mid - thick; x<=mid + thick; x++) pix(x,y,fg);
+      }
+      for (let x=0; x<cell; x++){
+        for (let y=mid - thick; y<=mid + thick; y++) pix(x,y,fg);
+      }
+      break;
+    }
+  }
+
+  // encode odd offset into tile via alpha in (0,1) channel? Not necessary.
+  // We'll stagger at mapping time by shifting sampling x for odd rows.
 
   return tile;
 }
@@ -461,9 +630,10 @@ function currentParamsHash(previewScale){
         inks: state.mixRule.inks,
         block: state.mixRule.block,
         pattern: state.mixRule.pattern || 'blue',
-        cellSize: state.mixRule.cellSize || 1,
-        origPalette: state.origPalette.slice() }
+        cellSize: state.mixRule.cellSize || 1 }
     : null;
+  const pr = state.patternRule.enabled ? { ...state.patternRule } : null;
+
   return JSON.stringify({
     inks: buildEnabledInks(),
     wL: +els.wL.value || 1.0,
@@ -472,11 +642,12 @@ function currentParamsHash(previewScale){
     sharpen: !!els.sharpen.checked,
     snapE2: 1.2,
     mixRule: mix,
+    patternRule: pr,
     previewScale
   });
 }
 function getScaledSrcImageData(scale){
-  scale = Math.max(0.1, Math.min(1, +scale || 1));
+  scale = Math.max(0.25, Math.min(1, +scale || 1));
   const sw=state.srcW, sh=state.srcH;
   const w=Math.max(1, Math.round(sw*scale)), h=Math.max(1, Math.round(sh*scale));
   const off=document.createElement('canvas'); off.width=w; off.height=h;
@@ -528,18 +699,18 @@ function unsharp(img) {
 
 function mapToPalette(){
   if(!state.srcW) return toast('Load an image first','danger');
-  const enabled=buildEnabledInks(); if(enabled.length===0) return toast('Enable at least one ink','danger');
+  let enabled=buildEnabledInks();
+  if(enabled.length===0){
+    // convenience: derive from original palette
+    enabled = state.origPalette.slice(0, Math.min(10, state.origPalette.length));
+    state.restricted = enabled.map(h => ({hex:h, enabled:true}));
+    renderRestricted(true);
+    toast('No inks enabled — using top original colors');
+  }
 
   const previewScale = +(els.previewRes?.value || 1);
   const { imageData, width, height } = getScaledSrcImageData(previewScale);
   const paramsHash = currentParamsHash(previewScale);
-
-  // Early exit if nothing changed
-  if (state.lastPreview.paramsHash === paramsHash &&
-      state.lastPreview.w === width && state.lastPreview.h === height) {
-    toast('Preview already up to date');
-    return;
-  }
 
   els.mapProgress.classList.remove('hidden');
   els.mapProgressLabel.textContent = 'Processing…';
@@ -562,17 +733,19 @@ function mapToPalette(){
   const block = Math.max(2, Math.min(64, state.mixRule.block || 6));
   const cellSize = Math.max(1, state.mixRule.cellSize || 1);
   const fullBlock = block * cellSize;
-  const mixTile = hasMix ? buildDotTile(block, state.mixRule.inks, state.mixRule.pattern || 'blue', cellSize) : null;
+  const mixTile = hasMix ? buildMixTile(block, state.mixRule.inks, state.mixRule.pattern || 'blue', cellSize) : null;
 
-  // Optional dither buffer
+  // Pattern Replace prep
+  const pr = state.patternRule.enabled && state.patternRule.srcHex ? { ...state.patternRule } : null;
+  const prTile = pr ? buildPatternTile(pr) : null;
+
   const err = dither ? new Float32Array(width * height * 3) : null;
 
   const src = imageData;
   const out = new ImageData(width, height);
 
-  // Process in row chunks to keep UI responsive
   let y = 0;
-  const ROWS_PER_CHUNK = 32;
+  const ROWS_PER_CHUNK = 40;
 
   function processChunk(){
     const yEnd = Math.min(height, y + ROWS_PER_CHUNK);
@@ -589,27 +762,53 @@ function mapToPalette(){
           b = clamp(b + err[idx * 3 + 2], 0, 255);
         }
 
-        // Manual mix: apply tile where nearest ORIGINAL equals srcHex
-        if (hasMix && state.origPalette.length) {
+        // Determine nearest original color (RGB) once if needed by 4a/4b
+        let nearestOrig = null;
+        if ((pr && state.origPalette.length) || (hasMix && state.origPalette.length)) {
           let bestHex = null, bestD = 1e18;
           for (const oh of state.origPalette) {
             const c = hexToRgb(oh);
             const d2 = (r - c.r) ** 2 + (g - c.g) ** 2 + (b - c.b) ** 2;
             if (d2 < bestD) { bestD = d2; bestHex = oh; }
           }
-          if (bestHex === state.mixRule.srcHex) {
-            const mx = x % fullBlock, my = y % fullBlock;
-            const mi = (my * mixTile.width + mx) * 4;
-            const mr = mixTile.data[mi + 0], mg = mixTile.data[mi + 1], mb = mixTile.data[mi + 2], ma = mixTile.data[mi + 3];
-            if (ma === 255) {
-              out.data[i4 + 0] = mr; out.data[i4 + 1] = mg; out.data[i4 + 2] = mb; out.data[i4 + 3] = a;
-              if (dither) {
-                const er = r - mr, eg = g - mg, eb = b - mb;
-                fsPropagate(err, width, x, y, er, eg, eb);
-              }
-              continue;
-            }
+          nearestOrig = bestHex;
+        }
+
+        // 4b Pattern Replace first
+        if (pr && sameHex(nearestOrig, pr.srcHex)) {
+          const cell = Math.max(2, pr.cell|0);
+          // stagger: shift odd rows by half cell
+          const sx = pr.stagger && (Math.floor(y / cell) % 2 === 1) ? ((x + Math.floor(cell/2)) % cell) : (x % cell);
+          const sy = y % cell;
+          const pi = (sy * prTile.width + sx) * 4;
+          out.data[i4 + 0] = prTile.data[pi + 0];
+          out.data[i4 + 1] = prTile.data[pi + 1];
+          out.data[i4 + 2] = prTile.data[pi + 2];
+          out.data[i4 + 3] = a;
+          if (dither) {
+            const er = r - prTile.data[pi + 0];
+            const eg = g - prTile.data[pi + 1];
+            const eb = b - prTile.data[pi + 2];
+            fsPropagate(err, width, x, y, er, eg, eb);
           }
+          continue;
+        }
+
+        // 4a Manual mix next
+        if (hasMix && sameHex(nearestOrig, state.mixRule.srcHex)) {
+          const mx = x % fullBlock, my = y % fullBlock;
+          const mi = (my * mixTile.width + mx) * 4;
+          out.data[i4 + 0] = mixTile.data[mi + 0];
+          out.data[i4 + 1] = mixTile.data[mi + 1];
+          out.data[i4 + 2] = mixTile.data[mi + 2];
+          out.data[i4 + 3] = a;
+          if (dither) {
+            const er = r - mixTile.data[mi + 0];
+            const eg = g - mixTile.data[mi + 1];
+            const eb = b - mixTile.data[mi + 2];
+            fsPropagate(err, width, x, y, er, eg, eb);
+          }
+          continue;
         }
 
         // Otherwise pick nearest ink in Lab
@@ -637,10 +836,10 @@ function mapToPalette(){
 
     els.mapProgressLabel.textContent = `Processing… ${Math.round((y/height)*100)}%`;
     if (y < height) {
-      // Let the UI breathe
       setTimeout(processChunk, 0);
     } else {
       if (doSharpen) unsharp(out);
+      // Always draw preview to outCanvas
       els.outCanvas.width = width; els.outCanvas.height = height;
       outCtx.putImageData(out, 0, 0);
       state.mappedImageData = out;
@@ -658,7 +857,12 @@ els.btnExportPNG.addEventListener('click', exportPNG);
 els.btnExportSVG.addEventListener('click', exportSVG);
 
 function ensureFullResMap(cb){
-  const enabled=buildEnabledInks(); if(enabled.length===0){ toast('Enable at least one ink','danger'); return; }
+  let enabled=buildEnabledInks();
+  if (enabled.length===0){
+    enabled = state.origPalette.slice(0, Math.min(10, state.origPalette.length));
+    state.restricted = enabled.map(h => ({hex:h, enabled:true}));
+    renderRestricted(true);
+  }
 
   const paramsHashFull = currentParamsHash(1);
   const upToDate = state.mappedImageData &&
@@ -672,9 +876,7 @@ function ensureFullResMap(cb){
   els.mapProgress.classList.remove('hidden');
   els.mapProgressLabel.textContent = 'Building export…';
 
-  // Run a synchronous full-res map using the same logic as preview
   const { imageData, width, height } = getScaledSrcImageData(1);
-
   const wL = +els.wL.value || 1.0;
   const wC = +els.wC.value || 1.0;
   const dither = !!els.dither.checked;
@@ -690,7 +892,11 @@ function ensureFullResMap(cb){
   const block = Math.max(2, Math.min(64, state.mixRule.block || 6));
   const cellSize = Math.max(1, state.mixRule.cellSize || 1);
   const fullBlock = block * cellSize;
-  const mixTile = hasMix ? buildDotTile(block, state.mixRule.inks, state.mixRule.pattern || 'blue', cellSize) : null;
+  const mixTile = hasMix ? buildMixTile(block, state.mixRule.inks, state.mixRule.pattern || 'blue', cellSize) : null;
+
+  const pr = state.patternRule.enabled && state.patternRule.srcHex ? { ...state.patternRule } : null;
+  const prTile = pr ? buildPatternTile(pr) : null;
+
   const err = dither ? new Float32Array(width * height * 3) : null;
 
   const src = imageData;
@@ -709,26 +915,52 @@ function ensureFullResMap(cb){
         b = clamp(b + err[idx * 3 + 2], 0, 255);
       }
 
-      if (hasMix && state.origPalette.length) {
+      // nearest original for 4a/4b
+      let nearestOrig = null;
+      if ((pr && state.origPalette.length) || (hasMix && state.origPalette.length)) {
         let bestHex = null, bestD = 1e18;
         for (const oh of state.origPalette) {
           const c = hexToRgb(oh);
           const d2 = (r - c.r) ** 2 + (g - c.g) ** 2 + (b - c.b) ** 2;
           if (d2 < bestD) { bestD = d2; bestHex = oh; }
         }
-        if (bestHex === state.mixRule.srcHex) {
-          const mx = x % fullBlock, my = y % fullBlock;
-          const mi = (my * mixTile.width + mx) * 4;
-          const mr = mixTile.data[mi + 0], mg = mixTile.data[mi + 1], mb = mixTile.data[mi + 2], ma = mixTile.data[mi + 3];
-          if (ma === 255) {
-            out.data[i4 + 0] = mr; out.data[i4 + 1] = mg; out.data[i4 + 2] = mb; out.data[i4 + 3] = a;
-            if (dither) {
-              const er = r - mr, eg = g - mg, eb = b - mb;
-              fsPropagate(err, width, x, y, er, eg, eb);
-            }
-            continue;
-          }
+        nearestOrig = bestHex;
+      }
+
+      // 4b
+      if (pr && sameHex(nearestOrig, pr.srcHex)) {
+        const cell = Math.max(2, pr.cell|0);
+        const sx = pr.stagger && (Math.floor(y / cell) % 2 === 1) ? ((x + Math.floor(cell/2)) % cell) : (x % cell);
+        const sy = y % cell;
+        const pi = (sy * prTile.width + sx) * 4;
+        out.data[i4 + 0] = prTile.data[pi + 0];
+        out.data[i4 + 1] = prTile.data[pi + 1];
+        out.data[i4 + 2] = prTile.data[pi + 2];
+        out.data[i4 + 3] = a;
+        if (dither) {
+          const er = r - prTile.data[pi + 0];
+          const eg = g - prTile.data[pi + 1];
+          const eb = b - prTile.data[pi + 2];
+          fsPropagate(err, width, x, y, er, eg, eb);
         }
+        continue;
+      }
+
+      // 4a
+      if (hasMix && sameHex(nearestOrig, state.mixRule.srcHex)) {
+        const mx = x % fullBlock, my = y % fullBlock;
+        const mi = (my * mixTile.width + mx) * 4;
+        out.data[i4 + 0] = mixTile.data[mi + 0];
+        out.data[i4 + 1] = mixTile.data[mi + 1];
+        out.data[i4 + 2] = mixTile.data[mi + 2];
+        out.data[i4 + 3] = a;
+        if (dither) {
+          const er = r - mixTile.data[mi + 0];
+          const eg = g - mixTile.data[mi + 1];
+          const eb = b - mixTile.data[mi + 2];
+          fsPropagate(err, width, x, y, er, eg, eb);
+        }
+        continue;
       }
 
       const lab = rgb2lab(r,g,b);
@@ -822,6 +1054,7 @@ els.btnSaveProject.addEventListener('click',()=>{
     restricted:state.restricted,
     allowWhite:state.allowWhite,
     mixRule:state.mixRule,
+    patternRule:state.patternRule,
     settings:{ wL:+els.wL.value, wC:+els.wC.value, dither:!!els.dither.checked, sharpen:!!els.sharpen.checked } };
   const arr=listProjects(); arr.unshift(proj); saveProjects(arr); listProjects(); toast('Project saved');
 });
@@ -835,14 +1068,27 @@ els.btnLoadProject.addEventListener('click',()=>{
     state.restricted=p.restricted||[];
     state.allowWhite=!!p.allowWhite; els.allowWhite.checked=state.allowWhite;
     state.mixRule={ srcHex:null, inks:[], block:6, pattern:'blue', cellSize:1, ...p.mixRule };
+    state.patternRule={ enabled:false, srcHex:null, bg:'#FFFFFF', shape:'dots', shapeColor:'#FF0000', cell:12, shapeSize:70, stagger:false, ...p.patternRule };
+
     els.wL.value=p.settings?.wL ?? 1.0;
     els.wC.value=p.settings?.wC ?? 1.0;
     els.dither.checked=!!(p.settings?.dither);
     els.sharpen.checked=!!(p.settings?.sharpen);
+
     els.blockSize.value=state.mixRule.block||6;
     els.mixCellSize.value=state.mixRule.cellSize||1;
     els.mixPattern.value=state.mixRule.pattern||'blue';
-    renderOrigPalette(); renderRestricted(); renderReplaceSrc();
+
+    els.prEnable.checked=!!state.patternRule.enabled;
+    els.prBg.value=state.patternRule.bg || '#FFFFFF';
+    els.prShape.value=state.patternRule.shape || 'dots';
+    els.prShapeColor.value=state.patternRule.shapeColor || '#FF0000';
+    els.prCell.value=state.patternRule.cell || 12;
+    els.prShapeSize.value=state.patternRule.shapeSize || 70;
+    els.prStagger.checked=!!state.patternRule.stagger;
+
+    renderOrigPalette(true); renderRestricted(true);
+    renderReplaceSrc(); renderPatternSrc();
     renderHero();
     toast('Project loaded — click “Apply mapping” to render');
   };
