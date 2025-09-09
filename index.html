@@ -96,11 +96,11 @@
         </div>
       </section>
 
-      <!-- Stage 4: Manual Mixing (single rule, dot pattern) -->
+      <!-- Stage 4: Manual Mixing (single rule, dot/stripe pattern) -->
       <section class="card" aria-labelledby="stg4-title">
         <header class="card__header">
           <h2 id="stg4-title">Stage 4 — Manual Mixing</h2>
-          <p class="muted">Pick one original color to replace with 2–3 inks as dots. Densities sum to 100%. Adjust pixel block size so Illustrator recognizes individual dots.</p>
+          <p class="muted">Pick one original color to replace with 2–3 inks as a tile. Densities must total 100%. Adjust pixel block so Illustrator recognizes individual elements.</p>
         </header>
         <div class="card__body">
           <div class="row wrap">
@@ -109,10 +109,20 @@
 
             <label for="blockSize">Pixel block size</label>
             <input id="blockSize" type="number" min="2" max="64" value="6" />
+
+            <!-- New: pattern selector for the mix tile -->
+            <label for="mixPattern">Pattern</label>
+            <select id="mixPattern" aria-label="Mix pattern">
+              <option value="blue">Blue-noise dots</option>
+              <option value="checker">Checker</option>
+              <option value="stripes-h">Stripes (H)</option>
+              <option value="stripes-v">Stripes (V)</option>
+              <option value="bayer">Ordered (Bayer)</option>
+            </select>
           </div>
 
           <div id="mixInks" class="mix-grid" aria-label="Mix ink rows (choose 2–3 inks and densities)">
-            <!-- JS will insert mix rows: [select ink] [range density] [label %] [remove] -->
+            <!-- JS inserts rows: [select ink] [range] [label %] [remove] -->
           </div>
 
           <div class="row wrap">
@@ -132,7 +142,7 @@
       <section class="card" aria-labelledby="stg5-title">
         <header class="card__header">
           <h2 id="stg5-title">Stage 5 — Map to Palette</h2>
-          <p class="muted">Weighted ΔE in Lab. Optionally add dithering and edge sharpening.</p>
+          <p class="muted">Preview maps at a selectable resolution. Exports always re-map at full resolution.</p>
         </header>
         <div class="card__body">
           <div class="row wrap">
@@ -155,7 +165,16 @@
             </fieldset>
           </div>
 
-          <div class="row">
+          <!-- New: preview resolution chooser -->
+          <div class="row wrap" style="margin-top:8px;">
+            <label for="previewRes">Preview resolution</label>
+            <select id="previewRes" title="Render mapped preview at this scale of the original">
+              <option value="0.25">Fast (25%)</option>
+              <option value="0.5">Medium (50%)</option>
+              <option value="0.75">High (75%)</option>
+              <option value="1" selected>Full (100%)</option>
+            </select>
+
             <button id="btnMap" class="btn btn-primary">Apply mapping</button>
             <div id="mapProgress" class="progress" role="status" aria-live="polite" aria-atomic="true" hidden>
               <span class="spinner" aria-hidden="true"></span>
@@ -169,7 +188,7 @@
       <section class="card" aria-labelledby="stg6-title">
         <header class="card__header">
           <h2 id="stg6-title">Stage 6 — Export</h2>
-          <p class="muted">PNG (lossless) is ideal for Illustrator’s Image Trace. SVG (rect-per-pixel) also available.</p>
+          <p class="muted">PNG is ideal for Illustrator’s Image Trace. SVG (rect-per-pixel) available. Export always runs full-res mapping with current settings.</p>
         </header>
         <div class="card__body">
           <div class="row wrap">
@@ -221,7 +240,7 @@
         </figure>
 
         <figure class="canvas-wrap" aria-labelledby="outCanvasTitle">
-          <figcaption id="outCanvasTitle" class="figcaption">Mapped Output</figcaption>
+          <figcaption id="outCanvasTitle" class="figcaption">Mapped Output (Preview)</figcaption>
           <div class="canvas-scroll" id="outScroll">
             <canvas id="outCanvas" width="0" height="0" aria-label="Mapped output canvas"></canvas>
           </div>
@@ -247,11 +266,11 @@
         <li><strong>Upload</strong> an image (AI art or selfie). Use <em>Preview width</em> to control on-screen size.</li>
         <li><strong>Extract</strong> an original palette or add colors via <em>Eyedropper</em>.</li>
         <li><strong>Restrict</strong> your inks (typically 3 + white). Toggle <em>Allow white</em> to include it.</li>
-        <li><strong>Mix</strong> one original color into 2–3 inks. Make sure densities total 100%. Adjust <em>Pixel block size</em> so Illustrator recognizes each dot.</li>
-        <li><strong>Map</strong> using ΔE weights, optional <em>Dither</em> and <em>Unsharp</em> to taste.</li>
-        <li><strong>Export</strong> PNG (1–4× scale, transparent optional) or SVG (naïve rect-per-pixel).</li>
+        <li><strong>Mix</strong> one original color into 2–3 inks. Set <em>Pixel block size</em> and a <em>Pattern</em> (dots/stripes/checker/Bayer). Ensure densities total 100%.</li>
+        <li><strong>Map</strong> at a chosen <em>Preview resolution</em> (25–100%). Use ΔE weights, optional <em>Dither</em> and <em>Unsharp</em>.</li>
+        <li><strong>Export</strong> PNG/SVG — the app automatically re-renders at full resolution with your current settings.</li>
       </ol>
-      <p class="muted">Tip: If Illustrator blends dots, increase the <em>Pixel block size</em> or export at higher scale.</p>
+      <p class="muted">Tip: If Illustrator blends dots, increase <em>Pixel block size</em> or export at higher scale.</p>
       <p class="muted">Privacy: Processing is 100% local; images never leave your browser.</p>
     </div>
     <footer class="modal__footer">
@@ -268,6 +287,8 @@
       <ul>
         <li>Inks: up to 10 (typical: 3 + white)</li>
         <li>Dither: Floyd–Steinberg (with optional unsharp)</li>
+        <li>Mix patterns: blue-noise dots, checker, stripes (H/V), ordered Bayer</li>
+        <li>Preview: scalable 25–100%, Export: always full-res</li>
         <li>Storage: local (projects + palette kits)</li>
       </ul>
     </div>
