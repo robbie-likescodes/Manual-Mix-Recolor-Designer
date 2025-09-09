@@ -1,5 +1,5 @@
 /* ==========================================================
-   Cup Mapper — styles.css (dark theme)
+   Cup Mapper — styles.css (dark theme, mobile + desktop)
    ========================================================== */
 
 :root {
@@ -14,7 +14,7 @@
   --panel-600: #2a2a2f;
 }
 
-/* -------------------- Global -------------------- */
+/* ---------- Global ---------- */
 body {
   margin: 0;
   padding: 0;
@@ -24,18 +24,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, h4 {
-  margin: 0;
-  font-weight: 600;
-}
-
+h1,h2,h3,h4 { margin: 0; font-weight: 600; }
 p { margin: 0; }
-
 .muted { color: var(--muted); }
 
-button, input, select {
-  font: inherit;
-}
+button, input, select { font: inherit; }
 
 .btn {
   background: var(--panel-600);
@@ -55,19 +48,19 @@ button, input, select {
   color: #000;
   font-weight: 600;
 }
-.btn-primary:hover { filter: brightness(1.1); }
 .btn-danger {
   background: var(--danger);
   border: none;
   color: #fff;
 }
-.btn-danger:hover { filter: brightness(1.1); }
+.btn-danger:hover,
+.btn-primary:hover { filter: brightness(1.1); }
 
 input[type="color"] {
   background: none;
   border: none;
-  width: 36px;
-  height: 24px;
+  width: 32px;
+  height: 22px;
   padding: 0;
   margin: 0 4px;
 }
@@ -82,17 +75,10 @@ select {
   padding: 2px 6px;
 }
 
-input[type="range"] {
-  width: 100px;
-}
+input[type="range"] { width: 100px; }
+.switch { display: inline-flex; align-items: center; gap: 4px; }
 
-.switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* -------------------- Layout -------------------- */
+/* ---------- Layout ---------- */
 .topbar {
   background: var(--panel-800);
   display: flex;
@@ -101,14 +87,13 @@ input[type="range"] {
   padding: 6px 12px;
   border-bottom: 1px solid var(--panel-700);
 }
-
 .app-title { font-size: 1.2rem; }
 .app-subtitle { font-weight: 400; color: var(--muted); font-size: 0.9rem; }
 
 .layout {
   display: flex;
   flex-direction: row;
-  height: calc(100vh - 42px);
+  height: calc(100vh - 46px);
 }
 
 .panel {
@@ -126,7 +111,7 @@ input[type="range"] {
   overflow: auto;
 }
 
-/* -------------------- Cards -------------------- */
+/* ---------- Cards ---------- */
 .card {
   background: var(--panel-700);
   border: 1px solid var(--panel-600);
@@ -139,15 +124,10 @@ input[type="range"] {
   padding: 6px 10px;
   border-bottom: 1px solid var(--panel-700);
 }
-.card__body {
-  padding: 10px;
-}
-.divider {
-  border-top: 1px solid var(--panel-600);
-  margin: 8px 0;
-}
+.card__body { padding: 10px; }
+.divider { border-top: 1px solid var(--panel-600); margin: 8px 0; }
 
-/* -------------------- Hero original preview -------------------- */
+/* ---------- Hero Preview ---------- */
 .heroWrap {
   width: 100%;
   margin: 8px 0 14px;
@@ -160,14 +140,14 @@ input[type="range"] {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 58vh;
-  image-rendering: auto; /* smooth */
+  max-height: 58vh;        /* large on mobile */
+  image-rendering: auto;   /* smooth photo preview */
 }
 @media (min-width: 900px) {
   #heroCanvas { max-height: 66vh; }
 }
 
-/* -------------------- Swatches -------------------- */
+/* ---------- Swatches ---------- */
 .swatch-grid {
   display: flex;
   flex-wrap: wrap;
@@ -181,54 +161,29 @@ input[type="range"] {
   border-radius: 6px;
 }
 .swatch .dot {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   margin-right: 4px;
 }
 
-/* -------------------- Mix grid -------------------- */
-.mix-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 8px 0;
-}
-.mix-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
+/* ---------- Mix grid ---------- */
+.mix-grid { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.mix-row { display: flex; align-items: center; gap: 4px; }
 
-/* -------------------- Canvas stack -------------------- */
-.canvas-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 10px;
-}
+/* ---------- Canvas stack ---------- */
+.canvas-stack { display: flex; flex-direction: column; gap: 12px; padding: 10px; }
 .canvas-wrap {
   background: var(--panel-600);
   border: 1px solid var(--panel-800);
   border-radius: 10px;
   padding: 6px;
 }
-.canvas-scroll {
-  overflow: auto;
-  background: #000;
-}
-canvas {
-  display: block;
-  background: #111;
-  image-rendering: pixelated;
-}
-.figcaption {
-  font-size: 0.9rem;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
+.canvas-scroll { overflow: auto; background: #000; }
+canvas { display: block; background: #111; image-rendering: pixelated; }
+.figcaption { font-size: 0.9rem; color: var(--muted); margin-bottom: 4px; }
 
-/* -------------------- Status bar -------------------- */
+/* ---------- Status bar ---------- */
 .statusbar {
   background: var(--panel-800);
   border-top: 1px solid var(--panel-700);
@@ -236,7 +191,7 @@ canvas {
   font-size: 0.9rem;
 }
 
-/* -------------------- Toasts -------------------- */
+/* ---------- Toasts ---------- */
 .toast-host {
   position: fixed;
   bottom: 12px;
@@ -256,7 +211,7 @@ canvas {
 .toast--ok { border-left: 4px solid var(--accent); }
 .toast--danger { border-left: 4px solid var(--danger); }
 
-/* -------------------- Progress -------------------- */
+/* ---------- Progress ---------- */
 .progress {
   display: flex;
   align-items: center;
@@ -273,7 +228,7 @@ canvas {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* -------------------- Modal -------------------- */
+/* ---------- Modal ---------- */
 .modal {
   background: var(--panel-700);
   color: var(--text);
@@ -285,15 +240,11 @@ canvas {
   background: var(--panel-600);
   padding: 8px 12px;
 }
-.modal__body {
-  padding: 12px;
-}
+.modal__body { padding: 12px; }
 
-/* -------------------- Responsive -------------------- */
+/* ---------- Responsive ---------- */
 @media (max-width: 800px) {
-  .layout {
-    flex-direction: column;
-  }
+  .layout { flex-direction: column; }
   .panel--controls {
     width: 100%;
     border-right: none;
