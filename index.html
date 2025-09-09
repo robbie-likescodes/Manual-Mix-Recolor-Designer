@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cup Mapper — Limited-Inks Halftone & Palette Mapper</title>
+  <link rel="stylesheet" href="styles.css" />
+  <meta name="description" content="Convert AI images and photos into limited-ink, vector-friendly halftone/dither outputs for cup printing workflows." />
+</head>
+<body>
+  <!-- ===== App Header / Topbar ===== -->
+  <header class="topbar" role="banner">
+    <div class="topbar__left">
+      <h1 class="app-title" aria-label="Cup Mapper">🎨 Cup Mapper</h1>
+      <span class="app-subtitle">AI/Selfie ➜ 3–10 inks ➜ Illustrator-friendly dots</span>
+    </div>
+    <nav class="topbar__right" aria-label="Quick actions">
+      <button id="btnOpenHelp" class="btn btn-ghost" aria-haspopup="dialog" aria-controls="dlgHelp" title="Help & tips">Help</button>
+      <button id="btnOpenAbout" class="btn btn-ghost" aria-haspopup="dialog" aria-controls="dlgAbout" title="About this app">About</button>
+    </nav>
+  </header>
+
+  <!-- ===== Main Layout ===== -->
+  <main id="main" class="layout" role="main">
+    <!-- ===== Left: Controls Column ===== -->
+    <aside class="panel panel--controls" aria-label="Controls panel">
+      <!-- Stage 1: Upload -->
+      <section class="card" aria-labelledby="stg1-title">
+        <header class="card__header">
+          <h2 id="stg1-title">Stage 1 — Upload</h2>
+          <p class="muted">Drop an image or pick a file. Works best with PNG/JPEG.</p>
+        </header>
+        <div class="card__body">
+          <div class="uploader" aria-label="Image upload">
+            <input id="fileInput" type="file" accept="image/*" />
+            <div class="uploader__row">
+              <label for="maxW">Preview width (px)</label>
+              <input id="maxW" type="number" min="300" max="6000" step="10" value="1600" />
+              <button id="btnClear" class="btn">Clear</button>
+              <button id="btnLoadSample" class="btn btn-ghost" title="Load sample image for quick demo">Load sample</button>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="preview-zoom">
+            <label for="zoom">Zoom</label>
+            <input id="zoom" type="range" min="10" max="400" value="100" />
+            <span id="zoomLabel" class="mono">100%</span>
+            <button id="btnZoomFit" class="btn btn-ghost" title="Fit to screen">Fit</button>
+            <button id="btnZoom100" class="btn btn-ghost" title="Reset zoom to 100%">100%</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 2: Original Palette -->
+      <section class="card" aria-labelledby="stg2-title">
+        <header class="card__header">
+          <h2 id="stg2-title">Stage 2 — Original Palette</h2>
+          <p class="muted">Auto-extract dominant colors; add more with an eyedropper.</p>
+        </header>
+        <div class="card__body">
+          <div class="row">
+            <label for="clusters">Clusters (K)</label>
+            <input id="clusters" type="number" min="2" max="16" value="8" />
+            <button id="btnExtract" class="btn">Auto extract</button>
+            <button id="btnEyedrop" class="btn btn-ghost" title="Click the source image to pick a color">Eyedropper</button>
+          </div>
+          <div id="origPalette" class="swatch-grid" aria-live="polite" aria-label="Original palette swatches"></div>
+        </div>
+      </section>
+
+      <!-- Stage 3: Restricted Palette -->
+      <section class="card" aria-labelledby="stg3-title">
+        <header class="card__header">
+          <h2 id="stg3-title">Stage 3 — Restricted Palette</h2>
+          <p class="muted">Enable up to 10 inks (typically 3 + white for cost). Edit colors or save kits.</p>
+        </header>
+        <div class="card__body">
+          <div class="row wrap">
+            <button id="btnRefreshRestricted" class="btn">Refresh from original</button>
+            <label class="switch">
+              <input id="allowWhite" type="checkbox" />
+              <span>Allow white mixing</span>
+            </label>
+            <div class="spacer"></div>
+            <button id="btnAddRestricted" class="btn btn-ghost" title="Add a blank ink slot">+ Add ink</button>
+          </div>
+
+          <div id="restrictedPalette" class="swatch-grid" aria-live="polite" aria-label="Restricted palette swatches with toggles"></div>
+
+          <div class="row wrap">
+            <button id="btnSaveKit" class="btn">Save kit</button>
+            <select id="kitSelect" aria-label="Saved kits"></select>
+            <button id="btnLoadKit" class="btn btn-ghost">Load kit</button>
+            <button id="btnDeleteKit" class="btn btn-danger">Delete kit</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 4: Manual Mixing (single rule, dot pattern) -->
+      <section class="card" aria-labelledby="stg4-title">
+        <header class="card__header">
+          <h2 id="stg4-title">Stage 4 — Manual Mixing</h2>
+          <p class="muted">Pick one original color to replace with 2–3 inks as dots. Densities sum to 100%. Adjust pixel block size so Illustrator recognizes individual dots.</p>
+        </header>
+        <div class="card__body">
+          <div class="row wrap">
+            <label for="replaceSrc">Original color to replace</label>
+            <select id="replaceSrc" aria-label="Pick original color to replace"></select>
+
+            <label for="blockSize">Pixel block size</label>
+            <input id="blockSize" type="number" min="2" max="64" value="6" />
+          </div>
+
+          <div id="mixInks" class="mix-grid" aria-label="Mix ink rows (choose 2–3 inks and densities)">
+            <!-- JS will insert mix rows: [select ink] [range density] [label %] [remove] -->
+          </div>
+
+          <div class="row wrap">
+            <button id="btnAddMixInk" class="btn btn-ghost">+ Add ink</button>
+            <button id="btnClearMix" class="btn btn-ghost">Clear mix</button>
+            <span id="mixTotal" class="mono">Total: 0%</span>
+          </div>
+
+          <div class="row wrap">
+            <button id="btnPreviewMix" class="btn">Preview replacement swatch</button>
+            <canvas id="mixPreview" width="192" height="192" aria-label="Mix preview"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 5: Map -->
+      <section class="card" aria-labelledby="stg5-title">
+        <header class="card__header">
+          <h2 id="stg5-title">Stage 5 — Map to Palette</h2>
+          <p class="muted">Weighted ΔE in Lab. Optionally add dithering and edge sharpening.</p>
+        </header>
+        <div class="card__body">
+          <div class="row wrap">
+            <fieldset class="fieldset">
+              <legend>ΔE Weights</legend>
+              <label for="wL">L (lightness)</label>
+              <input id="wL" type="number" step="0.1" min="0" max="3" value="1.0" />
+              <label for="wC">C (chroma)</label>
+              <input id="wC" type="number" step="0.1" min="0" max="3" value="1.0" />
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend>Dither</legend>
+              <label class="switch"><input id="dither" type="checkbox" /><span>Floyd–Steinberg</span></label>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend>Detail</legend>
+              <label class="switch"><input id="sharpen" type="checkbox" /><span>Unsharp</span></label>
+            </fieldset>
+          </div>
+
+          <div class="row">
+            <button id="btnMap" class="btn btn-primary">Apply mapping</button>
+            <div id="mapProgress" class="progress" role="status" aria-live="polite" aria-atomic="true" hidden>
+              <span class="spinner" aria-hidden="true"></span>
+              <span id="mapProgressLabel">Processing…</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 6: Export -->
+      <section class="card" aria-labelledby="stg6-title">
+        <header class="card__header">
+          <h2 id="stg6-title">Stage 6 — Export</h2>
+          <p class="muted">PNG (lossless) is ideal for Illustrator’s Image Trace. SVG (rect-per-pixel) also available.</p>
+        </header>
+        <div class="card__body">
+          <div class="row wrap">
+            <label for="exportScale">PNG Scale</label>
+            <select id="exportScale">
+              <option value="1">1×</option>
+              <option value="2">2×</option>
+              <option value="3">3×</option>
+              <option value="4">4×</option>
+            </select>
+
+            <label class="switch">
+              <input id="exportTransparent" type="checkbox" />
+              <span>Transparent background</span>
+            </label>
+
+            <button id="btnExportPNG" class="btn">Export PNG</button>
+            <button id="btnExportSVG" class="btn btn-ghost">Export SVG</button>
+            <a id="downloadLink" class="btn btn-primary" download style="display:none;">Download</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stage 7: Projects & Kits -->
+      <section class="card" aria-labelledby="stg7-title">
+        <header class="card__header">
+          <h2 id="stg7-title">Stage 7 — Projects</h2>
+          <p class="muted">Save locally and revisit later. Kits store your restricted palettes.</p>
+        </header>
+        <div class="card__body">
+          <div class="row wrap">
+            <button id="btnSaveProject" class="btn">Save project</button>
+            <select id="projectSelect" aria-label="Saved projects"></select>
+            <button id="btnLoadProject" class="btn btn-ghost">Load</button>
+            <button id="btnDeleteProject" class="btn btn-danger">Delete</button>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ===== Right: Preview Column ===== -->
+    <section class="panel panel--preview" aria-label="Image preview">
+      <div class="canvas-stack">
+        <figure class="canvas-wrap" aria-labelledby="srcCanvasTitle">
+          <figcaption id="srcCanvasTitle" class="figcaption">Source</figcaption>
+          <div class="canvas-scroll" id="srcScroll">
+            <canvas id="srcCanvas" width="0" height="0" aria-label="Source image canvas"></canvas>
+          </div>
+        </figure>
+
+        <figure class="canvas-wrap" aria-labelledby="outCanvasTitle">
+          <figcaption id="outCanvasTitle" class="figcaption">Mapped Output</figcaption>
+          <div class="canvas-scroll" id="outScroll">
+            <canvas id="outCanvas" width="0" height="0" aria-label="Mapped output canvas"></canvas>
+          </div>
+        </figure>
+      </div>
+
+      <div id="statusBar" class="statusbar" role="status" aria-live="polite">
+        <span id="statusText" class="mono">Ready.</span>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== Toasts / Notifications ===== -->
+  <div id="toastHost" class="toast-host" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- ===== Modals ===== -->
+  <dialog id="dlgHelp" class="modal" aria-labelledby="dlgHelpTitle">
+    <header class="modal__header">
+      <h3 id="dlgHelpTitle">Help & Tips</h3>
+    </header>
+    <div class="modal__body">
+      <ol class="help-steps">
+        <li><strong>Upload</strong> an image (AI art or selfie). Use <em>Preview width</em> to control on-screen size.</li>
+        <li><strong>Extract</strong> an original palette or add colors via <em>Eyedropper</em>.</li>
+        <li><strong>Restrict</strong> your inks (typically 3 + white). Toggle <em>Allow white</em> to include it.</li>
+        <li><strong>Mix</strong> one original color into 2–3 inks. Make sure densities total 100%. Adjust <em>Pixel block size</em> so Illustrator recognizes each dot.</li>
+        <li><strong>Map</strong> using ΔE weights, optional <em>Dither</em> and <em>Unsharp</em> to taste.</li>
+        <li><strong>Export</strong> PNG (1–4× scale, transparent optional) or SVG (naïve rect-per-pixel).</li>
+      </ol>
+      <p class="muted">Tip: If Illustrator blends dots, increase the <em>Pixel block size</em> or export at higher scale.</p>
+      <p class="muted">Privacy: Processing is 100% local; images never leave your browser.</p>
+    </div>
+    <footer class="modal__footer">
+      <button id="btnCloseHelp" class="btn btn-primary">Close</button>
+    </footer>
+  </dialog>
+
+  <dialog id="dlgAbout" class="modal" aria-labelledby="dlgAboutTitle">
+    <header class="modal__header">
+      <h3 id="dlgAboutTitle">About</h3>
+    </header>
+    <div class="modal__body">
+      <p>Maps full-color images into a restricted palette using dithering for realistic optical mixes (side-by-side dots). Outputs are tuned for Adobe Illustrator’s Image Trace.</p>
+      <ul>
+        <li>Inks: up to 10 (typical: 3 + white)</li>
+        <li>Dither: Floyd–Steinberg (with optional unsharp)</li>
+        <li>Storage: local (projects + palette kits)</li>
+      </ul>
+    </div>
+    <footer class="modal__footer">
+      <button id="btnCloseAbout" class="btn btn-primary">Close</button>
+    </footer>
+  </dialog>
+
+  <!-- ===== Hidden assets / templates (for JS cloning) ===== -->
+  <template id="tplMixRow">
+    <div class="mix-row">
+      <select class="mix-ink-select" aria-label="Choose restricted ink"></select>
+      <input class="mix-ink-range" type="range" min="0" max="100" value="0" />
+      <span class="mix-ink-val mono">0%</span>
+      <button class="mix-ink-remove btn btn-danger" title="Remove ink from mix">Remove</button>
+    </div>
+  </template>
+
+  <!-- ===== Scripts ===== -->
+  <script src="app.js" defer></script>
+</body>
+</html>
