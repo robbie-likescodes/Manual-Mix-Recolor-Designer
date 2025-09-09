@@ -7,10 +7,11 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- ============== Topbar ============== -->
+  <!-- ========= Top Bar ========= -->
   <header class="topbar">
     <div class="topbar__left">
-      <h1 class="app-title">Cup Mapper <span class="app-subtitle">Image → Limited Inks</span></h1>
+      <h1 class="app-title">Cup Mapper</h1>
+      <span class="app-subtitle">Prep images for limited inks & AI vectorizing</span>
     </div>
     <div class="topbar__right">
       <button id="btnOpenHelp" class="btn">Help</button>
@@ -18,44 +19,43 @@
     </div>
   </header>
 
-  <!-- ============== Layout ============== -->
+  <!-- ========= Main Layout ========= -->
   <div class="layout">
-
-    <!-- -------- Left panel: Controls -------- -->
-    <div class="panel panel--controls">
-      
+    <!-- ----- Controls (left) ----- -->
+    <aside class="panel panel--controls">
       <!-- Stage 1: Upload -->
-      <div class="card">
+      <section class="card">
         <div class="card__header">
-          <h2>1. Upload image</h2>
-          <p class="muted">AI art or selfie → start here</p>
+          <h2>1) Upload</h2>
+          <p class="muted">AI image or photo</p>
         </div>
         <div class="card__body">
-          <!-- Hero preview -->
+          <!-- HERO: big original preview (always visible on mobile) -->
           <div class="heroWrap">
             <canvas id="heroCanvas" width="0" height="0" aria-label="Original image preview"></canvas>
           </div>
 
-          <div class="uploader">
+          <div class="row wrap">
             <input id="fileInput" type="file" accept="image/*" />
-            <div class="uploader__row">
-              <label>Max width <input id="maxW" type="number" value="1600" /></label>
-              <button id="btnClear" class="btn">Clear</button>
-              <button id="btnLoadSample" class="btn">Load sample</button>
-            </div>
+            <button id="btnLoadSample" class="btn">Load sample</button>
+            <button id="btnClear" class="btn">Clear</button>
           </div>
-          <div class="preview-zoom">
+
+          <div class="row wrap">
+            <label>Max width <input id="maxW" type="number" value="1600" /></label>
             <label>Zoom <input id="zoom" type="range" min="10" max="400" value="100" /></label>
             <span id="zoomLabel">100%</span>
             <button id="btnZoomFit" class="btn">Fit</button>
             <button id="btnZoom100" class="btn">100%</button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Stage 2: Original palette -->
-      <div class="card">
-        <div class="card__header"><h2>2. Original palette</h2></div>
+      <!-- Stage 2: Original Palette -->
+      <section class="card">
+        <div class="card__header">
+          <h2>2) Original palette</h2>
+        </div>
         <div class="card__body">
           <div class="row wrap">
             <label>Clusters <input id="clusters" type="number" min="2" max="16" value="8" /></label>
@@ -64,11 +64,13 @@
           </div>
           <div id="origPalette" class="swatch-grid"></div>
         </div>
-      </div>
+      </section>
 
-      <!-- Stage 3: Restricted palette -->
-      <div class="card">
-        <div class="card__header"><h2>3. Restricted palette</h2></div>
+      <!-- Stage 3: Restricted Palette -->
+      <section class="card">
+        <div class="card__header">
+          <h2>3) Restricted palette</h2>
+        </div>
         <div class="card__body">
           <div class="row wrap">
             <button id="btnRefreshRestricted" class="btn">From original</button>
@@ -84,71 +86,101 @@
             <button id="btnDeleteKit" class="btn btn-danger">Delete</button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Stage 4: Manual mixing -->
-      <div class="card">
-        <div class="card__header"><h2>4. Manual mixing</h2></div>
+      <!-- Stage 4: Manual Mixing (no smart mixing) -->
+      <section class="card">
+        <div class="card__header">
+          <h2>4) Manual mixing</h2>
+          <p class="muted">Choose a source color and replace it with tiled ink dots/stripes</p>
+        </div>
         <div class="card__body">
-          <label>Replace color
-            <select id="replaceSrc"></select>
-          </label>
-          <label>Block size <input id="blockSize" type="number" value="6" /></label>
-          <label>Logical pixel size <input id="mixCellSize" type="number" min="1" value="1" /></label>
-          <label>Pattern
-            <select id="mixPattern">
-              <option value="blue">Blue noise</option>
-              <option value="checker">Checker</option>
-              <option value="stripes-h">Stripes (horizontal)</option>
-              <option value="stripes-v">Stripes (vertical)</option>
-              <option value="bayer">Bayer dither</option>
-            </select>
-          </label>
+          <div class="row wrap">
+            <label>Replace color
+              <select id="replaceSrc"></select>
+            </label>
+          </div>
+
+          <div class="row wrap">
+            <label>Block size <input id="blockSize" type="number" min="2" max="64" value="6" /></label>
+            <label>Logical pixel size <input id="mixCellSize" type="number" min="1" value="1" /></label>
+            <label>Pattern
+              <select id="mixPattern">
+                <option value="blue">Blue noise</option>
+                <option value="checker">Checker</option>
+                <option value="stripes-h">Stripes (H)</option>
+                <option value="stripes-v">Stripes (V)</option>
+                <option value="bayer">Bayer dither</option>
+              </select>
+            </label>
+          </div>
+
           <div id="mixInks" class="mix-grid"></div>
-          <div class="row">
+
+          <div class="row wrap">
             <button id="btnAddMixInk" class="btn">Add ink</button>
             <button id="btnClearMix" class="btn btn-danger">Clear</button>
             <span id="mixTotal" class="spacer">Total: 0%</span>
           </div>
-          <button id="btnPreviewMix" class="btn-primary">Preview replacement swatch</button>
-          <canvas id="mixPreview" width="160" height="80"></canvas>
-        </div>
-      </div>
 
-      <!-- Stage 5: Mapping -->
-      <div class="card">
-        <div class="card__header"><h2>5. Map to palette</h2></div>
+          <button id="btnPreviewMix" class="btn-primary">Preview replacement swatch</button>
+          <canvas id="mixPreview" width="180" height="90"></canvas>
+        </div>
+      </section>
+
+      <!-- Stage 5: Map to Palette (preview resolution selectable) -->
+      <section class="card">
+        <div class="card__header">
+          <h2>5) Map to palette</h2>
+        </div>
         <div class="card__body">
           <div class="row wrap">
-            <label>ΔL weight <input id="wL" type="number" value="1" /></label>
-            <label>ΔC weight <input id="wC" type="number" value="1" /></label>
+            <label>ΔL weight <input id="wL" type="number" value="1" step="0.1" /></label>
+            <label>ΔC weight <input id="wC" type="number" value="1" step="0.1" /></label>
             <label class="switch"><input id="dither" type="checkbox" /> Dither</label>
             <label class="switch"><input id="sharpen" type="checkbox" /> Sharpen</label>
+            <!-- Optional preview scale (if your JS uses it) -->
+            <label>Preview scale
+              <select id="previewRes">
+                <option value="1">100%</option>
+                <option value="0.75">75%</option>
+                <option value="0.5">50%</option>
+                <option value="0.33">33%</option>
+                <option value="0.25">25%</option>
+              </select>
+            </label>
           </div>
           <button id="btnMap" class="btn-primary">Apply mapping</button>
           <div id="mapProgress" class="progress hidden">
-            <div class="spinner"></div><span id="mapProgressLabel">Processing…</span>
+            <div class="spinner"></div>
+            <span id="mapProgressLabel">Processing…</span>
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- Stage 6: Export -->
-      <div class="card">
-        <div class="card__header"><h2>6. Export</h2></div>
+      <section class="card">
+        <div class="card__header">
+          <h2>6) Export</h2>
+        </div>
         <div class="card__body">
-          <label>Scale <input id="exportScale" type="number" value="1" min="1" max="4" /></label>
-          <label class="switch"><input id="exportTransparent" type="checkbox" /> Transparent</label>
+          <div class="row wrap">
+            <label>Scale <input id="exportScale" type="number" value="1" min="1" max="4" /></label>
+            <label class="switch"><input id="exportTransparent" type="checkbox" /> Transparent</label>
+          </div>
           <div class="row wrap">
             <button id="btnExportPNG" class="btn">Export PNG</button>
             <button id="btnExportSVG" class="btn">Export SVG</button>
             <a id="downloadLink" class="btn" style="display:none">Download</a>
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- Stage 7: Projects -->
-      <div class="card">
-        <div class="card__header"><h2>7. Projects</h2></div>
+      <section class="card">
+        <div class="card__header">
+          <h2>7) Projects</h2>
+        </div>
         <div class="card__body">
           <div class="row wrap">
             <button id="btnSaveProject" class="btn">Save</button>
@@ -157,11 +189,11 @@
             <button id="btnDeleteProject" class="btn btn-danger">Delete</button>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
+    </aside>
 
-    <!-- -------- Right panel: Previews -------- -->
-    <div class="panel panel--preview">
+    <!-- ----- Preview (right) ----- -->
+    <main class="panel panel--preview">
       <div class="canvas-stack">
 
         <figure class="canvas-wrap">
@@ -172,41 +204,43 @@
         </figure>
 
         <figure class="canvas-wrap">
-          <figcaption class="figcaption">Mapped image</figcaption>
+          <figcaption class="figcaption">Mapped image (preview)</figcaption>
           <div id="outScroll" class="canvas-scroll">
             <canvas id="outCanvas" width="0" height="0"></canvas>
           </div>
         </figure>
+
       </div>
-    </div>
+    </main>
   </div>
 
-  <!-- ============== Status bar & Toasts ============== -->
+  <!-- ========= Footer / Status ========= -->
   <footer class="statusbar">
     <span id="statusText">Ready</span>
   </footer>
   <div id="toastHost" class="toast-host"></div>
 
-  <!-- ============== Templates ============== -->
+  <!-- ========= Template(s) ========= -->
   <template id="tplMixRow">
     <div class="mix-row">
       <select class="mix-ink-select"></select>
       <input type="range" class="mix-ink-range" min="0" max="100" value="0" />
       <span class="mix-ink-val">0%</span>
-      <button class="mix-ink-remove btn btn-danger">×</button>
+      <button class="mix-ink-remove btn btn-danger" title="Remove">×</button>
     </div>
   </template>
 
-  <!-- ============== Modals ============== -->
+  <!-- ========= Modals ========= -->
   <dialog id="dlgHelp" class="modal">
     <div class="modal__header"><h3>Help</h3></div>
     <div class="modal__body">
       <ol class="help-steps">
-        <li>Upload an image (AI art or photo).</li>
-        <li>Extract palette, set restricted inks.</li>
-        <li>Optional: mix inks or pattern replace.</li>
-        <li>Click Apply mapping to reduce colors.</li>
-        <li>Export PNG/SVG and refine in Illustrator.</li>
+        <li>Upload an image (AI or photo).</li>
+        <li>Extract the original palette, tweak if needed.</li>
+        <li>Build a restricted palette (enable/disable inks).</li>
+        <li>Manual mix: replace a color with tiles of 2–3 inks (set block/pixel size & pattern).</li>
+        <li>Map to palette (choose preview scale) and review.</li>
+        <li>Export PNG/SVG and vectorize in Illustrator.</li>
       </ol>
     </div>
     <div class="modal__footer"><button id="btnCloseHelp" class="btn">Close</button></div>
@@ -215,12 +249,12 @@
   <dialog id="dlgAbout" class="modal">
     <div class="modal__header"><h3>About</h3></div>
     <div class="modal__body">
-      <p>Cup Mapper — web tool to prep complex art for limited-ink cup printing. Optimized for Adobe Illustrator vectorization.</p>
+      <p>Cup Mapper helps convert complex art into limited-ink imagery designed for reliable vectorization in Adobe Illustrator and cup printing workflows.</p>
     </div>
     <div class="modal__footer"><button id="btnCloseAbout" class="btn">Close</button></div>
   </dialog>
 
-  <!-- ============== Script ============== -->
+  <!-- ========= App ========= -->
   <script src="app.js"></script>
 </body>
 </html>
