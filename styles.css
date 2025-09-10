@@ -341,3 +341,16 @@ a:hover { text-decoration: underline; }
 @media (max-width: 560px) {
   .card__header p.muted { display: none; }
 }
+
+/* ====== Export tweaks (preset slider + marks) ====== */
+.marks {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.marks span { text-align: center; }
+#resPreset { width: 200px; }
+@media (max-width: 560px) { #resPreset { width: 100%; } }
