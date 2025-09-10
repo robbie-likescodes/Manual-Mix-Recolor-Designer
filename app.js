@@ -4,6 +4,7 @@
    - Hero preview, kits, projects
    - Manual mix (4a) + Pattern replace (4b)
    - iOS color picker stability (no re-render on input)
+   - HQ Export: remap at export scale (1–16×)
    ========================================================== */
 
 /* -------------------- DOM -------------------- */
@@ -108,6 +109,7 @@ const heroCtx = els.heroCanvas.getContext('2d', { willReadFrequently: true });
 /* -------------------- App State -------------------- */
 const KITS_KEY = 'cupmapper_kits_v1';
 const PROJ_KEY = 'cupmapper_projects_v1';
+const MAX_EXPORT_SCALE = 16; // NEW: allow very large HQ remap
 
 let state = {
   // image
@@ -546,12 +548,8 @@ function buildPatternTile(rule){
     tile.data[i+0]=c.r; tile.data[i+1]=c.g; tile.data[i+2]=c.b; tile.data[i+3]=255;
   };
 
-  // stagger offset for row 0 only; in the mapper we offset by row parity
-  const oddOffset = rule.stagger ? Math.floor(cell/2) : 0;
-
   switch (rule.shape) {
     case 'dots': {
-      // center dot (no per-row stagger inside single tile; real stagger happens via mapper parity)
       for (let y=0; y<cell; y++){
         for (let x=0; x<cell; x++){
           const dx = x - Math.floor(half);
@@ -610,9 +608,6 @@ function buildPatternTile(rule){
     }
   }
 
-  // encode odd offset into tile via alpha in (0,1) channel? Not necessary.
-  // We'll stagger at mapping time by shifting sampling x for odd rows.
-
   return tile;
 }
 
@@ -646,13 +641,18 @@ function currentParamsHash(previewScale){
     previewScale
   });
 }
-function getScaledSrcImageData(scale){
-  scale = Math.max(0.25, Math.min(1, +scale || 1));
+
+// --- scaled source fetcher ---
+// For preview we clamp scale ≤ 1; for export we allow up to MAX_EXPORT_SCALE.
+function getScaledSrcImageData(scale, forExport = false){
+  const maxScale = forExport ? MAX_EXPORT_SCALE : 1;
+  scale = Math.max(0.25, Math.min(maxScale, +scale || 1));
   const sw=state.srcW, sh=state.srcH;
   const w=Math.max(1, Math.round(sw*scale)), h=Math.max(1, Math.round(sh*scale));
   const off=document.createElement('canvas'); off.width=w; off.height=h;
   const cx=off.getContext('2d',{willReadFrequently:true});
-  cx.imageSmoothingEnabled=true; cx.drawImage(els.srcCanvas,0,0,w,h);
+  cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality='high';
+  cx.drawImage(els.srcCanvas,0,0,w,h);
   return { imageData: cx.getImageData(0,0,w,h), width:w, height:h };
 }
 
@@ -709,8 +709,8 @@ function mapToPalette(){
   }
 
   const previewScale = +(els.previewRes?.value || 1);
-  const { imageData, width, height } = getScaledSrcImageData(previewScale);
-  const paramsHash = currentParamsHash(previewScale);
+  const { imageData, width, height } = getScaledSrcImageData(Math.min(1, previewScale), false);
+  const paramsHash = currentParamsHash(Math.min(1, previewScale));
 
   els.mapProgress.classList.remove('hidden');
   els.mapProgressLabel.textContent = 'Processing…';
@@ -843,7 +843,7 @@ function mapToPalette(){
       els.outCanvas.width = width; els.outCanvas.height = height;
       outCtx.putImageData(out, 0, 0);
       state.mappedImageData = out;
-      state.lastPreview = { paramsHash, previewScale, w: width, h: height };
+      state.lastPreview = { paramsHash, previewScale: Math.min(1, previewScale), w: width, h: height };
       els.mapProgress.classList.add('hidden');
       status('Preview mapping complete');
       toast('Preview updated');
@@ -852,11 +852,12 @@ function mapToPalette(){
   processChunk();
 }
 
-/* -------------------- Stage 6: Export (full-res remap before save) -------------------- */
+/* -------------------- Stage 6: Export (FULL-RES REMAP) -------------------- */
 els.btnExportPNG.addEventListener('click', exportPNG);
 els.btnExportSVG.addEventListener('click', exportSVG);
 
-function ensureFullResMap(cb){
+// Remap at requested export scale (1..MAX_EXPORT_SCALE), then export 1:1
+function ensureFullResMap(cb, remapScale = 1){
   let enabled=buildEnabledInks();
   if (enabled.length===0){
     enabled = state.origPalette.slice(0, Math.min(10, state.origPalette.length));
@@ -864,19 +865,20 @@ function ensureFullResMap(cb){
     renderRestricted(true);
   }
 
-  const paramsHashFull = currentParamsHash(1);
+  // Include scale in hash so we never reuse a smaller map for bigger export
+  const paramsHashFull = currentParamsHash(remapScale);
   const upToDate = state.mappedImageData &&
                    state.lastPreview.paramsHash === paramsHashFull &&
-                   state.lastPreview.previewScale === 1 &&
-                   state.mappedImageData.width === state.srcW &&
-                   state.mappedImageData.height === state.srcH;
+                   state.lastPreview.previewScale === remapScale &&
+                   state.mappedImageData.width === Math.round(state.srcW * remapScale) &&
+                   state.mappedImageData.height === Math.round(state.srcH * remapScale);
 
   if (upToDate) return cb(state.mappedImageData);
 
   els.mapProgress.classList.remove('hidden');
   els.mapProgressLabel.textContent = 'Building export…';
 
-  const { imageData, width, height } = getScaledSrcImageData(1);
+  const { imageData, width, height } = getScaledSrcImageData(remapScale, true);
   const wL = +els.wL.value || 1.0;
   const wC = +els.wC.value || 1.0;
   const dither = !!els.dither.checked;
@@ -985,10 +987,12 @@ function ensureFullResMap(cb){
     if (y % 64 === 0) els.mapProgressLabel.textContent = `Building export… ${Math.round((y/height)*100)}%`;
   }
 
-  if (doSharpen) unsharp(out);
+  // Extra sharpening for big exports
+  if (doSharpen && remapScale >= 2) { unsharp(out); unsharp(out); }
+  else if (doSharpen) { unsharp(out); }
 
   state.mappedImageData = out;
-  state.lastPreview = { paramsHash: paramsHashFull, previewScale: 1, w: width, h: height };
+  state.lastPreview = { paramsHash: paramsHashFull, previewScale: remapScale, w: width, h: height };
   els.outCanvas.width = width; els.outCanvas.height = height;
   outCtx.putImageData(out, 0, 0);
   els.mapProgress.classList.add('hidden');
@@ -997,28 +1001,34 @@ function ensureFullResMap(cb){
 
 function exportPNG(){
   if(!state.srcW) return toast('Load an image first','danger');
+
+  // Treat exportScale as REMAP scale (not post-scale)
+  const remapScale = Math.max(1, Math.min(MAX_EXPORT_SCALE, +els.exportScale.value || 1));
+
   ensureFullResMap((fullImg)=>{
-    const scale=+els.exportScale.value||1;
     const transparent=!!els.exportTransparent.checked;
-    const w=fullImg.width*scale, h=fullImg.height*scale;
+    const w=fullImg.width, h=fullImg.height;
 
     const c=document.createElement('canvas'); c.width=w; c.height=h;
     const cx=c.getContext('2d'); cx.imageSmoothingEnabled=false;
 
     if(!transparent){ cx.fillStyle='#FFFFFF'; cx.fillRect(0,0,w,h); }
-    const tmp=document.createElement('canvas'); tmp.width=fullImg.width; tmp.height=fullImg.height;
+    const tmp=document.createElement('canvas'); tmp.width=w; tmp.height=h;
     tmp.getContext('2d').putImageData(fullImg,0,0);
-    cx.drawImage(tmp,0,0,w,h);
+    cx.drawImage(tmp,0,0); // 1:1 draw, no scaling
 
     c.toBlob((blob)=>{ const url=URL.createObjectURL(blob);
-      els.downloadLink.href=url; els.downloadLink.download='cup-mapper.png';
+      els.downloadLink.href=url; els.downloadLink.download=`cup-mapper-${remapScale}x.png`;
       els.downloadLink.style.display='inline-flex'; els.downloadLink.textContent='Download PNG';
-      toast('PNG ready');
+      toast('PNG ready (HQ)');
     }, 'image/png');
-  });
+  }, remapScale);
 }
 function exportSVG(){
   if(!state.srcW) return toast('Load an image first','danger');
+
+  const remapScale = Math.max(1, Math.min(MAX_EXPORT_SCALE, +els.exportScale.value || 1));
+
   ensureFullResMap((img)=>{
     const {width,height,data}=img;
     let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" shape-rendering="crispEdges">`;
@@ -1033,10 +1043,10 @@ function exportSVG(){
     svg+=`</svg>`;
     const blob=new Blob([svg],{type:'image/svg+xml'});
     const url=URL.createObjectURL(blob);
-    els.downloadLink.href=url; els.downloadLink.download='cup-mapper.svg';
+    els.downloadLink.href=url; els.downloadLink.download=`cup-mapper-${remapScale}x.svg`;
     els.downloadLink.style.display='inline-flex'; els.downloadLink.textContent='Download SVG';
-    toast('SVG ready');
-  });
+    toast('SVG ready (HQ)');
+  }, remapScale);
 }
 
 /* -------------------- Stage 7: Projects -------------------- */
